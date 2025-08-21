@@ -15,7 +15,7 @@ Answer the question based only on the following context:
 
 ---
 
-Answer the question based on the above context: {question}
+Answer the question in-depth based on the above context: {question}
 """
 
 class LMStudioEmbeddings:
@@ -87,8 +87,8 @@ def main():
     db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embedding_function)
 
     # Search the DB.
-    results = db.similarity_search_with_relevance_scores(query_text, k=3)
-    if len(results) == 0 or results[0][1] < 0.7:
+    results = db.similarity_search_with_relevance_scores(query_text, k=13)
+    if len(results) == 0 or results[0][1] < 0.3:
         print(f"Unable to find matching results.")
         return
 
@@ -97,16 +97,37 @@ def main():
     prompt = prompt_template.format(context=context_text, question=query_text)
     print(prompt)
 
-    model = ChatOpenAI(
-        base_url="http://localhost:1234/v1",  # LM Studio endpoint
-        api_key="dummy-key",
-        model="qwen/qwen3-4b-thinking-2507"
-    )
-    response_text = model.predict(prompt)
+    # model = ChatOpenAI(
+    #     base_url="http://localhost:1234/v1",  # LM Studio endpoint
+    #     api_key="dummy-key",
+    #     model="qwen/qwen3-4b-thinking-2507"
+    # )
+    # response_text = model.predict(prompt)
 
-    sources = [doc.metadata.get("source", None) for doc, _score in results]
-    formatted_response = f"Response: {response_text}\nSources: {sources}"
-    print(formatted_response)
+    # sources = [doc.metadata.get("source", None) for doc, _score in results]
+    # formatted_response = f"Response: {response_text}\nSources: {sources}"
+    # print(formatted_response)
+
+    response = requests.post(
+                    "http://localhost:1234/v1/chat/completions",
+                    json={
+                        "model": "qwen/qwen3-4b-thinking-2507",
+                        "messages": [
+                            {"role": "user", "content": prompt}
+                        ],
+                        "max_tokens": 40000,
+                        "temperature": 0.7
+                    },
+                    headers={"Content-Type": "application/json"}
+                )
+                
+    if response.status_code == 200:
+        result = response.json()
+        response_text = result["choices"][0]["message"]["content"]
+        print("\n=== Model Response (Direct API) ===")
+        print(f"RESPONSE: {response_text}\n")
+    else:
+        print(f"Direct API call failed: {response.status_code} - {response.text}")
 
 
 if __name__ == "__main__":

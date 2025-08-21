@@ -18,7 +18,7 @@ Answer the question based on the above context, keep the answer clean: {question
 """
 # Simple LMStudioEmbeddings class
 class LMStudioEmbeddings:
-    def __init__(self, base_url: str = "http://localhost:1234/v1", model: str = "text-embedding-qwen3-embedding-4b"):
+    def __init__(self, base_url: str = "http://localhost:1234/v1", model: str = "text-embedding-nomic-embed-text-v1.5"):
         self.base_url = base_url
         self.model = model
     
