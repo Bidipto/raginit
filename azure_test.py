@@ -1,11 +1,10 @@
-import requests
 import numpy as np
-from langchain_openai import ChatOpenAI
+from openai import AzureOpenAI
 from langchain.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
+import os
 
 load_dotenv()
-
 
 PROMPT_TEMPLATE = """
 Answer the question based only on the following context:
@@ -18,33 +17,24 @@ Answer the question based on the above context, keep the answer clean: {question
 """
 
 
-# Simple LMStudioEmbeddings class
-class LMStudioEmbeddings:
-    def __init__(
-        self,
-        base_url: str = "http://localhost:1234/v1",
-        model: str = "text-embedding-qwen3-embedding-0.6b",
-    ):
-        self.base_url = base_url
-        self.model = model
+class AzureOpenAIEmbeddingsWrapper:
+    def __init__(self):
+        self.client = AzureOpenAI(
+            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+            api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
+            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+        )
+        self.embedding_deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME")
 
     def embed_documents(self, texts):
         """Embed multiple documents"""
         clean_texts = [str(text).strip() for text in texts]
 
-        response = requests.post(
-            f"{self.base_url}/embeddings",
-            json={"input": clean_texts, "model": self.model},
-            headers={"Content-Type": "application/json"},
+        response = self.client.embeddings.create(
+            input=clean_texts, model=self.embedding_deployment
         )
 
-        if response.status_code != 200:
-            print(f"API Error: {response.status_code} - {response.text}")
-            raise Exception(f"Embedding API failed: {response.text}")
-
-        result = response.json()
-        embeddings = [item["embedding"] for item in result["data"]]
-
+        embeddings = [item.embedding for item in response.data]
         print(
             f"Generated {len(embeddings)} embeddings, dimension: {len(embeddings[0])}"
         )
@@ -71,10 +61,17 @@ def calculate_similarity(embedding1, embedding2):
 
 
 def main():
-    print("=== Simple LM Studio Embedding Test ===\n")
+    print("=== Azure OpenAI Embedding Test ===\n")
 
-    # Initialize embeddings
-    embeddings = LMStudioEmbeddings()
+    # Initialize Azure OpenAI client
+    client = AzureOpenAI(
+        api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+        api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
+        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+    )
+
+    # Initialize embeddings wrapper
+    embeddings = AzureOpenAIEmbeddingsWrapper()
 
     # Test documents
     documents = [
@@ -127,51 +124,26 @@ def main():
         similarities.sort(reverse=True)
 
         context_text = "\n\n---\n\n".join([doc for _, _, doc in similarities[:5]])
-        # print(f"\nContext for prompt:\n{context_text}\n")
 
         print("\n=== Top Matches ===")
         for sim, idx, doc in similarities[:5]:
             print(f"Score: {sim:.6f} | Doc {idx + 1}: {doc}")
 
+        # Create prompt
         prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
         prompt = prompt_template.format(context=context_text, question=query)
         print(f"\nPROMPT:\n{prompt}\n")
 
-        response = requests.post(
-            "http://localhost:1234/v1/chat/completions",
-            json={
-                "model": "qwen/qwen3-4b-thinking-2507",
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 5000,
-                "temperature": 0.7,
-            },
-            headers={"Content-Type": "application/json"},
+        # Get response using Azure OpenAI Chat model
+        response = client.chat.completions.create(
+            model=os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME"),
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=5000,
+            temperature=0.7,
         )
 
-        if response.status_code == 200:
-            result = response.json()
-            response_text = result["choices"][0]["message"]["content"]
-            print("\n=== Model Response (Direct API) ===")
-            print(f"RESPONSE: {response_text}\n")
-        else:
-            print(f"Direct API call failed: {response.status_code} - {response.text}")
-
-        # # Test with exact matches
-        # print("\n=== Testing Exact Matches ===")
-        # exact_tests = [
-        #     "Chagla",
-        #     "Anubhav",
-        #     "programming"
-        # ]
-
-        # for test_word in exact_tests:
-        #     test_embedding = embeddings.embed_query(test_word)
-        #     print(f"\nTesting word: '{test_word}'")
-
-        #     for i, doc_emb in enumerate(doc_embeddings):
-        #         similarity = calculate_similarity(test_embedding, doc_emb)
-        #         if similarity > 0.5:  # Only show good matches
-        #             print(f"  Strong match with Doc {i+1}: {similarity:.6f}")
+        print("\n=== Azure OpenAI Model Response ===")
+        print(f"RESPONSE: {response.choices[0].message.content}\n")
 
     except Exception as e:
         print(f"Error: {e}")
